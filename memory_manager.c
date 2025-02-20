@@ -82,89 +82,82 @@ void mem_init(size_t size)
 // mem_alloc allocates space in the memory pool
 void* mem_alloc(size_t size)
 {
-    // Check if size of MemBlock is greater than 0
-    if (size <= 0)
-    {
-        // Instead of error, allocate minimum size
+    // Handle minimum size allocation
+    if (size == 0) {
         size = sizeof(void*);
-    }
-
-    // Check if memory pool is initialized
-    if (MemPool.ptr == NULL)
-    {
-        fprintf(stderr, "mem_alloc error: Memory pool not initialized\n");
-        return NULL;
     }
 
     pthread_mutex_lock(&MemPool.mutex);
 
-    // Check if enough space in the Memory pool
-    if (size > MemPool.size)
-    {
+    // Validate memory pool
+    if (MemPool.ptr == NULL) {
         pthread_mutex_unlock(&MemPool.mutex);
-        fprintf(stderr, "mem_alloc error: Too large, Memory pool size is %zu.\n", MemPool.size);
         return NULL;
     }
 
-    // Check if Memory pool is empty
-    if (MemPool.next == NULL)
-    {
-        MemPool.next = block_init(MemPool.ptr, size, NULL);
-        if (MemPool.next == NULL) {
-            pthread_mutex_unlock(&MemPool.mutex);
-            return NULL;
-        }
+    // Check available space
+    if (size > MemPool.size) {
         pthread_mutex_unlock(&MemPool.mutex);
-        return MemPool.next->ptr;
+        return NULL;
     }
 
-    // Define a block
-    struct MemBlock* block = MemPool.next;
-    
-    // Check if it's space before the first block
-    if (block->ptr != MemPool.ptr && ((char*)MemPool.ptr + size) <= (char*)block->ptr)
-    {
-        struct MemBlock *temp = MemPool.next;
-        MemPool.next = block_init(MemPool.ptr, size, temp);
-        if (MemPool.next == NULL) {
+    // First allocation
+    if (MemPool.next == NULL) {
+        struct MemBlock* new_block = block_init(MemPool.ptr, size, NULL);
+        if (new_block == NULL) {
             pthread_mutex_unlock(&MemPool.mutex);
             return NULL;
         }
+        MemPool.next = new_block;
         pthread_mutex_unlock(&MemPool.mutex);
-        return MemPool.next->ptr;
+        return new_block->ptr;
     }
-    
-    // Check if it's space between two blocks
-    while (block->next != NULL)
-    {   
-        if (((char*)block->ptr + block->size + size) <= (char*)block->next->ptr)
-        {
-            struct MemBlock *temp = block->next;
-            block->next = block_init((char*)block->ptr + block->size, size, temp);
-            if (block->next == NULL) {
+
+    // Try to allocate at the start
+    if (((char*)MemPool.next->ptr - (char*)MemPool.ptr) >= size) {
+        struct MemBlock* new_block = block_init(MemPool.ptr, size, MemPool.next);
+        if (new_block == NULL) {
+            pthread_mutex_unlock(&MemPool.mutex);
+            return NULL;
+        }
+        MemPool.next = new_block;
+        pthread_mutex_unlock(&MemPool.mutex);
+        return new_block->ptr;
+    }
+
+    // Find a gap between blocks
+    struct MemBlock* current = MemPool.next;
+    while (current->next != NULL) {
+        size_t gap = (char*)current->next->ptr - ((char*)current->ptr + current->size);
+        if (gap >= size) {
+            struct MemBlock* new_block = block_init((char*)current->ptr + current->size, 
+                                                  size, current->next);
+            if (new_block == NULL) {
                 pthread_mutex_unlock(&MemPool.mutex);
                 return NULL;
             }
+            current->next = new_block;
             pthread_mutex_unlock(&MemPool.mutex);
-            return block->next->ptr;
+            return new_block->ptr;
         }
-        block = block->next;
+        current = current->next;
     }
 
-    // Check if it's enough space at the end
-    if (((char*)block->ptr + block->size + size) <= ((char*)MemPool.ptr + MemPool.size))
-    {
-        block->next = block_init((char*)block->ptr + block->size, size, NULL);
-        if (block->next == NULL) {
+    // Try to allocate at the end
+    size_t remaining = MemPool.size - ((char*)current->ptr + current->size - (char*)MemPool.ptr);
+    if (remaining >= size) {
+        struct MemBlock* new_block = block_init((char*)current->ptr + current->size, 
+                                              size, NULL);
+        if (new_block == NULL) {
             pthread_mutex_unlock(&MemPool.mutex);
             return NULL;
         }
+        current->next = new_block;
         pthread_mutex_unlock(&MemPool.mutex);
-        return block->next->ptr;
+        return new_block->ptr;
     }
 
     pthread_mutex_unlock(&MemPool.mutex);
-    fprintf(stderr, "mem_alloc failed, can not allocate a space size %zu.\n", size);
     return NULL;
 }
 
