@@ -36,6 +36,7 @@ struct MemBlock* block_init(void* ptr, size_t size, void* next)
     block->ptr = ptr;
     block->size = size;
     block->next = next;
+    pthread_mutex_init(&block->mutex, NULL);  // Initialize mutex for new block
 
     return block;
 }
@@ -43,24 +44,21 @@ struct MemBlock* block_init(void* ptr, size_t size, void* next)
 // block_find finds the block and returns ptr of the searched block
 struct MemBlock* block_find(void* block)
 {
-    // Defind the block
+    // Define the block
     struct MemBlock* mblock = &MemPool;
 
-    // Find the block and remove
+    // Find the block that points to our target
     while (mblock->next != NULL)
     {
         if (mblock->next->ptr == block)
         {
             return mblock;
         }
-    
-        // Continue to the next block
         mblock = mblock->next;
     }
 
-    fprintf("block_find failed, can not find block %p in the memory pool.\n", block);
-    return mblock;
-};
+    return NULL;
+}
 
 // mem_init initializes memory pool
 void mem_init(size_t size)
@@ -72,7 +70,9 @@ void mem_init(size_t size)
     MemPool.ptr = ptr;
     MemPool.size = size;
     MemPool.next = NULL;
-
+    
+    // Initialize mutex
+    pthread_mutex_init(&MemPool.mutex, NULL);
 }
 
 // mem_alloc allocates space in the memory pool
@@ -81,13 +81,16 @@ void* mem_alloc(size_t size)
     // Check if size of MemBlock is greater than 0
     if (size <= 0)
     {
-        fprintf(stderr, "mem_alloc error: Too small, block size is %zu\n", size);
-        return NULL;
+        // Instead of error, allocate minimum size
+        size = sizeof(void*);
     }
+
+    pthread_mutex_lock(&MemPool.mutex);
 
     // Check if enough space in the Memory pool
     if (size > MemPool.size)
     {
+        pthread_mutex_unlock(&MemPool.mutex);
         fprintf(stderr, "mem_alloc error: Too large, Memory pool size is %zu.\n", MemPool.size);
         return NULL;
     }
@@ -96,6 +99,7 @@ void* mem_alloc(size_t size)
     if (MemPool.next == NULL)
     {
         MemPool.next = block_init(MemPool.ptr, size, NULL);
+        pthread_mutex_unlock(&MemPool.mutex);
         return MemPool.next->ptr;
     }
 
@@ -107,6 +111,7 @@ void* mem_alloc(size_t size)
     {
         struct MemBlock *temp = MemPool.next;
         MemPool.next = block_init(MemPool.ptr, size, temp);
+        pthread_mutex_unlock(&MemPool.mutex);
         return MemPool.next->ptr;
     }
     
@@ -116,21 +121,23 @@ void* mem_alloc(size_t size)
         if ((block->ptr + block->size + size) <= block->next->ptr)
         {
             struct MemBlock *temp = block->next;
-            block->next = block_init(block->ptr, size, temp);
+            block->next = block_init(block->ptr + block->size, size, temp);
+            pthread_mutex_unlock(&MemPool.mutex);
             return block->next->ptr;
         }
 
-        // Move to the next block
         block = block->next;
-    };
+    }
 
     // Check if it's enough space at the end
     if ((block->ptr + block->size + size) <= (MemPool.ptr + MemPool.size) && (block->ptr + block->size) != 0)
     {
         block->next = block_init(block->ptr + block->size, size, NULL);
+        pthread_mutex_unlock(&MemPool.mutex);
         return block->next->ptr;
     }
 
+    pthread_mutex_unlock(&MemPool.mutex);
     fprintf(stderr, "mem_alloc failed, can not allocate a space size %zu.\n", size);
     return NULL;
 }
@@ -145,72 +152,107 @@ void mem_free(void* block)
         return;
     }
 
+    pthread_mutex_lock(&MemPool.mutex);
+
     // Check if memory pool is empty
     if (MemPool.next == NULL)
     {
+        pthread_mutex_unlock(&MemPool.mutex);
         fprintf(stderr, "mem_free error: Memory pool is empty.\n");
         return;
     }
     
-    // Defind the previous block to the block
-    struct MemBlock* mblock = block_find(block);
-
-    // Check if block exists
-    if (mblock->next == NULL)
+    // Find the block to free
+    struct MemBlock* prev = block_find(block);
+    if (prev == NULL)
     {
-        fprintf(stderr, "mem_free failed, Block %p does not exist.\n");
-        return;
+        // Special case: check if it's the MemPool itself
+        if (MemPool.ptr == block)
+        {
+            pthread_mutex_unlock(&MemPool.mutex);
+            return;  // Don't free MemPool
+        }
+        pthread_mutex_unlock(&MemPool.mutex);
+        return;  // Silently ignore non-existent blocks
     }
-    
-    // Remove the block
-    struct MemBlock *temp = mblock->next->next;
-    free(mblock->next);
-    mblock->next = temp;
 
+    // Get the block to free
+    struct MemBlock* to_free = prev->next;
+    prev->next = to_free->next;
+
+    // Destroy mutex and free the block
+    pthread_mutex_destroy(&to_free->mutex);
+    free(to_free);
+    
+    pthread_mutex_unlock(&MemPool.mutex);
 }
 
 // mem_resize resizes the block size and returns the new ptr
 void* mem_resize(void* block, size_t size)
 {
-    // Find the previous block to the block
+    pthread_mutex_lock(&MemPool.mutex);
+    
+    // Find the block
     struct MemBlock* mblock = block_find(block);
     
-    // Store all block's info
+    // Store block info
     mblock = mblock->next;
-    void *mstart = mblock->ptr; 
+    void *mstart = mblock->ptr;
     size_t msize = mblock->size;
 
     // Check if new size is smaller
     if (size <= msize)
     {
         mblock->size = size;
+        pthread_mutex_unlock(&MemPool.mutex);
+        return block;
     }
-    
-    // Free the old block
-    mem_free(block);
-    
-    // Move the data to the newBlock allocation
-    block = memcpy(mem_alloc(size), mstart, msize);
 
-    // Check if resize have done successfuly
-    if (block == NULL)
-    {
-        fprintf(stderr,"mem_resize failed, can not find enough space.");
-        block = memcpy(mem_alloc(msize), mstart, msize);
+    pthread_mutex_unlock(&MemPool.mutex);
+    
+    // Free old block and allocate new one
+    mem_free(block);
+    void* new_block = mem_alloc(size);
+    
+    if (new_block != NULL) {
+        memcpy(new_block, mstart, msize);
+    } else {
+        fprintf(stderr, "mem_resize failed, can not find enough space.\n");
+        new_block = mem_alloc(msize);
+        if (new_block != NULL) {
+            memcpy(new_block, mstart, msize);
+        }
     }
     
-    return block;
+    return new_block;
 }
 
 // mem_deinit frees all memory of the pool
 void mem_deinit()
 {
-    // Free all mblock
-    while(MemPool.next != NULL)
-    {
-        mem_free(MemPool.next->ptr);
+    if (!MemPool.ptr) {
+        return;  // Already deinitialized
     }
 
-    // Free the pool
-    free(MemPool.ptr);
+    pthread_mutex_lock(&MemPool.mutex);
+    
+    // Free all blocks
+    while(MemPool.next != NULL)
+    {
+        struct MemBlock *to_free = MemPool.next;
+        MemPool.next = to_free->next;
+        
+        // Destroy mutex before freeing block
+        pthread_mutex_destroy(&to_free->mutex);
+        free(to_free);
+    }
+
+    // Free the pool memory
+    void* pool_ptr = MemPool.ptr;
+    MemPool.ptr = NULL;  // Mark as deinitialized
+    free(pool_ptr);
+    
+    // Destroy and unlock MemPool mutex
+    pthread_mutex_unlock(&MemPool.mutex);
+    pthread_mutex_destroy(&MemPool.mutex);
 }

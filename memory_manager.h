@@ -2,6 +2,7 @@
 #define MEMORY_MANAGER_H
 
 #include <stddef.h> // For size_t
+#include <pthread.h>
 
 // Helps C++ compilers to handle C header files
 #ifdef __cplusplus
@@ -17,6 +18,7 @@ struct MemBlock
     void *ptr;
     size_t size;
     struct MemBlock *next;
+    pthread_mutex_t mutex;  // Add mutex for thread safety
 }MemPool;
 
 void pool_info();
