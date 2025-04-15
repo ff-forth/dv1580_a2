@@ -33,15 +33,17 @@ void pool_info()
 struct MemBlock* block_init(void* ptr, size_t size, void* next)
 {
 
-    void* blockptr = malloc(sizeof(struct MemBlock));
-    struct MemBlock* block = (struct MemBlock*)blockptr;
-    
+    // Allocate memory for the block
+    struct MemBlock* block = (struct MemBlock*)malloc(sizeof(struct MemBlock));
+    if (!block) 
+    {
+        return NULL;
+    }
+
+    // Initialize the block
     block->ptr = ptr;
     block->size = size;
     block->next = next;
-
-    // Unlock the mutex
-    pthread_mutex_unlock(&mem_lock);
 
     return block;
 }
@@ -113,50 +115,62 @@ void* mem_alloc(size_t size)
         return NULL;
     }
 
+    void* result = NULL;
+
     // Check if Memory pool is empty
     if (MemPool.next == NULL)
     {
         MemPool.next = block_init(MemPool.ptr, size, NULL);
-        return MemPool.next->ptr;
-    }
-
-    // Defind a block
-    struct MemBlock* currentBlock = MemPool.next;
-    
-    // Check if it's a space before the first block
-    if (currentBlock->ptr != MemPool.ptr && (MemPool.ptr + size) <= currentBlock->ptr)
-    {
-        struct MemBlock *temp = MemPool.next;
-        MemPool.next = block_init(MemPool.ptr, size, temp);
-        return MemPool.next->ptr;
-    }
-    
-    // Check if it's space between two blocks
-    while (currentBlock->next != NULL)
-    {   
-        if ((currentBlock->ptr + currentBlock->size + size) <= currentBlock->next->ptr)
+        if (MemPool.next) 
         {
-            struct MemBlock *temp = currentBlock->next;
-            pthread_mutex_unlock(&mem_lock);
-            currentBlock->next = block_init(currentBlock->ptr + currentBlock->size, size, temp);
-            return currentBlock->next->ptr;
+            result = MemPool.next->ptr;
         }
+        pthread_mutex_unlock(&mem_lock);
+        return result;
+    }
 
-        // Move to the next block
-        currentBlock = currentBlock->next;
-    };
+    // Check if it's space before the first block
+    if (MemPool.next->ptr != MemPool.ptr && (MemPool.ptr + size) <= MemPool.next->ptr) 
+    {
+        struct MemBlock *new_block = block_init(MemPool.ptr, size, MemPool.next);
+        if (new_block) {
+            MemPool.next = new_block;
+            result = new_block->ptr;
+        }
+        pthread_mutex_unlock(&mem_lock);
+        return result;
+    }
+
+    // Check for space between blocks
+    struct MemBlock* current = MemPool.next;
+    while (current->next != NULL) {
+        void* gap_start = current->ptr + current->size;
+        void* gap_end = current->next->ptr;
+        
+        if ((gap_start + size) <= gap_end) {
+            struct MemBlock *new_block = block_init(gap_start, size, current->next);
+            if (new_block) {
+                current->next = new_block;
+                result = new_block->ptr;
+            }
+            pthread_mutex_unlock(&mem_lock);
+            return result;
+        }
+        current = current->next;
+    }
 
     // Check if it's enough space at the end
-    if ((currentBlock->ptr + currentBlock->size + size) <= (MemPool.ptr + MemPool.size) && (currentBlock->ptr + currentBlock->size) != 0)
-    {
-        pthread_mutex_unlock(&mem_lock);
-        currentBlock->next = block_init(currentBlock->ptr + currentBlock->size, size, NULL);
-        return currentBlock->next->ptr;
+    void* end_ptr = current->ptr + current->size;
+    if ((end_ptr + size) <= (MemPool.ptr + MemPool.size)) {
+        struct MemBlock *new_block = block_init(end_ptr, size, NULL);
+        if (new_block) {
+            current->next = new_block;
+            result = new_block->ptr;
+        }
     }
 
-    // fprintf(stderr, "mem_alloc failed, can not allocate a space size %zu.\n", size);
     pthread_mutex_unlock(&mem_lock);
-    return NULL;
+    return result;
 }
 
 // Free the allocated space in the memory pool
@@ -203,50 +217,55 @@ void mem_free(void* block)
 // mem_resize resizes the block size and returns the new ptr
 void* mem_resize(void* block, size_t size)
 {
+    if (!block || size == 0) 
+    {
+        return NULL;
+    }
+
     // Lock the mutex
     pthread_mutex_lock(&mem_lock);
 
-    // Find the previous block to the block
-    struct MemBlock* mblock = block_find(block);
-    
-    // Store all block's info
-    mblock = mblock->next;
-    void *mstart = mblock->ptr; 
-    size_t msize = mblock->size;
-
-    // Check if new size is smaller
-    if (size <= msize)
+    // Find the block
+    struct MemBlock* prevBlock = block_find(block);
+    if (!prevBlock || !prevBlock->next) 
     {
-        mblock->size = size;
+        pthread_mutex_unlock(&mem_lock);
+        return NULL;
+    }
+
+    struct MemBlock* current = prevBlock->next;
+    size_t old_size = current->size;
+
+    // If new size is smaller, just update the size
+    if (size <= old_size) {
+        current->size = size;
+        pthread_mutex_unlock(&mem_lock);
         return block;
     }
-    
-    // Unlock the mutex
-    pthread_mutex_unlock(&mem_lock);
 
+    // Try to expand in place if possible
+    if (current->next && 
+        (current->ptr + size) <= current->next->ptr) {
+        current->size = size;
+        pthread_mutex_unlock(&mem_lock);
+        return block;
+    }
+
+    // Need to allocate new block and copy data
+    pthread_mutex_unlock(&mem_lock);
+    void* new_block = mem_alloc(size);
+    if (!new_block) 
+    {
+        return NULL;
+    }
+
+    // Copy the data
+    memcpy(new_block, block, old_size);
+    
     // Free the old block
     mem_free(block);
 
-    // Allocate new block
-    void* newBlock = mem_alloc(size);
-
-    // Lock the mutex
-    pthread_mutex_lock(&mem_lock);
-
-    // Move the data to the newBlock allocation
-    block = memcpy(newBlock, mstart, msize);
-
-    // Check if resize have done successfuly
-    if (block == NULL)
-    {
-        fprintf(stderr,"mem_resize failed, can not find enough space.");
-        block = memcpy(mem_alloc(msize), mstart, msize);
-    }
-
-    // Unlock the mutex
-    pthread_mutex_unlock(&mem_lock);
-
-    return block;
+    return new_block;
 }
 
 // mem_deinit frees all memory of the pool
