@@ -290,6 +290,5 @@ void list_cleanup(Node** head)
     
     *head = NULL;
     pthread_mutex_unlock(&list_mutex);
-    pthread_mutex_destroy(&list_mutex);
     mem_deinit();
 };
