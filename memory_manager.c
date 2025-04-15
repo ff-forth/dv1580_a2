@@ -78,10 +78,14 @@ void mem_init(size_t size)
 // mem_alloc allocates space in the memory pool
 void* mem_alloc(size_t size)
 {
+    // Lock the mutex
+    pthread_mutex_lock(&MemPool.lock);
+
     // Check if the size of MemBlock is greater than 0
     if (size <= 0)
     {
         fprintf(stderr, "mem_alloc error: Too small, block size is %zu\n", size);
+        pthread_mutex_unlock(&MemPool.lock);
         return NULL;
     }
 
@@ -89,11 +93,9 @@ void* mem_alloc(size_t size)
     if (size > MemPool.size)
     {
         fprintf(stderr, "mem_alloc error: Too large, Memory pool size is %zu.\n", MemPool.size);
+        pthread_mutex_unlock(&MemPool.lock);
         return NULL;
     }
-
-    // Lock the mutex
-    pthread_mutex_lock(&MemPool.lock);
 
     // Check if Memory pool is empty
     if (MemPool.next == NULL)
@@ -148,15 +150,16 @@ void* mem_alloc(size_t size)
 // Free the allocated space in the memory pool
 void mem_free(void* block)
 {
+    // Lock the mutex
+    pthread_mutex_lock(&MemPool.lock);
+
     // Check if block ptr is null
     if (block == NULL)
     {
         fprintf(stderr, "mem_free error: block ptr is null.\n");
+        pthread_mutex_unlock(&MemPool.lock);
         return;
     }
-
-    // Lock the mutex
-    pthread_mutex_lock(&MemPool.lock);
 
     // Check if memory pool is empty
     if (MemPool.next == NULL)
@@ -206,7 +209,6 @@ void* mem_resize(void* block, size_t size)
         mblock->size = size;
     }
 
-    
     // Free the old block
     pthread_mutex_unlock(&MemPool.lock);
     mem_free(block);
