@@ -7,15 +7,24 @@
 // block_info prints information of the block
 void block_info(struct MemBlock *mblock)
 {
+    // Lock the mutex
+    pthread_mutex_lock(&MemPool.lock);
+
     printf("\nMemBlock: %p\n", mblock);
     printf("Ptr: %p\n", mblock->ptr);
     printf("size: %zu\n", mblock->size);
     printf("Next: %p\n", mblock->next);
+
+    // Unlock the mutex
+    pthread_mutex_unlock(&MemPool.lock);
 }
 
 // pool_info prints informations of all block in the pool
 void pool_info()
 {
+    // Lock the mutex
+    pthread_mutex_lock(&MemPool.lock);
+
     struct MemBlock* mblock = &MemPool;
     
     while(mblock != NULL)
@@ -23,6 +32,9 @@ void pool_info()
         block_info(mblock);
         mblock = mblock->next;
     }
+
+    // Unlock the mutex
+    pthread_mutex_unlock(&MemPool.lock);
 }
 
 // block_init creates a MemBlock in in the memory pool
@@ -35,6 +47,9 @@ struct MemBlock* block_init(void* ptr, size_t size, void* next)
     block->ptr = ptr;
     block->size = size;
     block->next = next;
+
+    // Unlock the mutex
+    pthread_mutex_unlock(&MemPool.lock);
 
     return block;
 }
@@ -101,7 +116,6 @@ void* mem_alloc(size_t size)
     if (MemPool.next == NULL)
     {
         MemPool.next = block_init(MemPool.ptr, size, NULL);
-        pthread_mutex_unlock(&MemPool.lock);
         return MemPool.next->ptr;
     }
 
@@ -113,7 +127,6 @@ void* mem_alloc(size_t size)
     {
         struct MemBlock *temp = MemPool.next;
         MemPool.next = block_init(MemPool.ptr, size, temp);
-        pthread_mutex_unlock(&MemPool.lock);
         return MemPool.next->ptr;
     }
     
@@ -124,7 +137,6 @@ void* mem_alloc(size_t size)
         {
             struct MemBlock *temp = block->next;
             block->next = block_init(block->ptr, size, temp);
-            pthread_mutex_unlock(&MemPool.lock);
             return block->next->ptr;
         }
 
@@ -136,7 +148,6 @@ void* mem_alloc(size_t size)
     if ((block->ptr + block->size + size) <= (MemPool.ptr + MemPool.size) && (block->ptr + block->size) != 0)
     {
         block->next = block_init(block->ptr + block->size, size, NULL);
-        pthread_mutex_unlock(&MemPool.lock);
         return block->next->ptr;
     }
 
