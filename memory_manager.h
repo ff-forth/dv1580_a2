@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #include <pthread.h>
 
 // Helps C++ compilers to handle C header files
@@ -19,13 +20,13 @@ struct MemBlock
     void *ptr;
     size_t size;
     struct MemBlock *next;
-    pthread_mutex_t lock;
 }MemPool;
 
 void pool_info();
 void block_info(struct MemBlock *block);
 struct MemBlock* block_init(void* ptr, size_t size, void* next);
 struct MemBlock* block_find(void* block);
+static pthread_mutex_t mem_lock = PTHREAD_MUTEX_INITIALIZER;
 
    /**
       * Initializes the memory manager with a specified size of memory pool.
