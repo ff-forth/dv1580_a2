@@ -5,12 +5,12 @@
 #include "memory_manager.h" // Include your custom memory manager
 #include <stdint.h>
 #include <pthread.h>
+
 typedef struct Node
 {
     uint16_t data;     // Stores the data as an unsigned 16-bit integer
     struct Node *next; // Pointer to the next node in the list
-    pthread_mutex_t lock;
-
+    pthread_mutex_t lock;  // Mutex for thread safety
 } Node;
 
 // Function declarations
