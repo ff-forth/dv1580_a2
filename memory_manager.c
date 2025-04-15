@@ -205,9 +205,12 @@ void* mem_resize(void* block, size_t size)
     {
         mblock->size = size;
     }
+
     
     // Free the old block
+    pthread_mutex_unlock(&MemPool.lock);
     mem_free(block);
+    pthread_mutex_lock(&MemPool.lock);
     
     // Move the data to the newBlock allocation
     block = memcpy(mem_alloc(size), mstart, msize);
@@ -234,7 +237,9 @@ void mem_deinit()
     // Free all mblock
     while(MemPool.next != NULL)
     {
+        pthread_mutex_unlock(&MemPool.lock);
         mem_free(MemPool.next->ptr);
+        pthread_mutex_lock(&MemPool.lock);
     }
 
     // Free the pool
