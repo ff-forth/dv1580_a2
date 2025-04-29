@@ -228,6 +228,7 @@ void* mem_resize(void* block, size_t size)
 {
     if (!block || size == 0) 
     {
+        fprintf(stderr, "mem_resize failed, block ptr is null or size is 0.\n");
         return NULL;
     }
 
@@ -239,6 +240,7 @@ void* mem_resize(void* block, size_t size)
     if (!prevBlock || !prevBlock->next) 
     {
         pthread_mutex_unlock(&mem_lock);
+        fprintf(stderr, "mem_resize failed, cannot find the block to resize\n");
         return NULL;
     }
 
@@ -257,6 +259,7 @@ void* mem_resize(void* block, size_t size)
         (current->ptr + size) <= current->next->ptr) {
         current->size = size;
         pthread_mutex_unlock(&mem_lock);
+        fprintf(stderr, "mem_resize failed, can not allocate a new block.\n");
         return block;
     }
 
@@ -265,7 +268,8 @@ void* mem_resize(void* block, size_t size)
     void* new_block = mem_alloc(size);
     if (!new_block) 
     {
-        return NULL;
+        fprintf(stderr, "mem_resize failed, can not allocate a new block.\n");
+        return block;
     }
 
     // Copy the data
