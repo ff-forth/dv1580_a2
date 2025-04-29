@@ -40,6 +40,7 @@ struct MemBlock* block_init(void* ptr, size_t size, void* next)
     // Allocate memory for the block
     struct MemBlock* block = (struct MemBlock*)malloc(sizeof(struct MemBlock));
     if (!block) {
+        fprintf(stderr, "block_init failed, can not allocate memory.\n");
         return NULL;
     }
 
@@ -69,7 +70,7 @@ struct MemBlock* block_find(void* block)
         prevBlock = prevBlock->next;
     }
 
-    // fprintf(stderr, "block_find failed, can not find block %p in the memory pool.\n", block);
+    fprintf(stderr, "block_find failed, can not find block %p in the memory pool.\n", block);
     return prevBlock;
 };
 
@@ -78,6 +79,7 @@ void mem_init(size_t size)
 {
     // Lock the mutex
     pthread_mutex_lock(&mem_lock);
+    
     // Allocate space in the memory
     void* ptr = malloc(size);
     if (!ptr) 
@@ -102,8 +104,18 @@ void* mem_alloc(size_t size)
     // Lock the mutex
     pthread_mutex_lock(&mem_lock);
 
-    // Check if size is valid
-    if (size > MemPool.size) {
+    // Check if size of MemBlock is greater than 0
+    if (size <= 0)
+    {
+        fprintf(stderr, "mem_alloc error: Too small, block size is %zu\n", size);
+        pthread_mutex_unlock(&mem_lock);
+        return NULL;
+    }
+
+    // Check if enough space in the Memory pool
+    if (size > MemPool.size) 
+    {
+        fprintf(stderr, "mem_alloc error: Too large, block size is %zu\n", size);
         pthread_mutex_unlock(&mem_lock);
         return NULL;
     }
@@ -111,20 +123,21 @@ void* mem_alloc(size_t size)
     void* result = NULL;
 
     // Check if Memory pool is empty
-    if (MemPool.next == NULL) {
+    if (MemPool.next == NULL) 
+    {
         MemPool.next = block_init(MemPool.ptr, size, NULL);
-        if (MemPool.next) {
-            result = MemPool.next->ptr;
-        }
+        if (MemPool.next) result = MemPool.next->ptr;
         pthread_mutex_unlock(&mem_lock);
         return result;
     }
 
     // Check if it's space before the first block
     if (MemPool.next->ptr != MemPool.ptr && 
-        (MemPool.ptr + size) <= MemPool.next->ptr) {
+        (MemPool.ptr + size) <= MemPool.next->ptr)     
+    {
         struct MemBlock *new_block = block_init(MemPool.ptr, size, MemPool.next);
-        if (new_block) {
+        if (new_block) 
+        {
             MemPool.next = new_block;
             result = new_block->ptr;
         }
@@ -134,13 +147,16 @@ void* mem_alloc(size_t size)
 
     // Check for space between blocks
     struct MemBlock* current = MemPool.next;
-    while (current->next != NULL) {
+    while (current->next != NULL) 
+    {
         void* gap_start = current->ptr + current->size;
         void* gap_end = current->next->ptr;
         
-        if ((gap_start + size) <= gap_end) {
+        if ((gap_start + size) <= gap_end) 
+        {
             struct MemBlock *new_block = block_init(gap_start, size, current->next);
-            if (new_block) {
+            if (new_block) 
+            {
                 current->next = new_block;
                 result = new_block->ptr;
             }
@@ -152,9 +168,11 @@ void* mem_alloc(size_t size)
 
     // Check if it's enough space at the end
     void* end_ptr = current->ptr + current->size;
-    if ((end_ptr + size) <= (MemPool.ptr + MemPool.size)) {
+    if ((end_ptr + size) <= (MemPool.ptr + MemPool.size)) 
+    {
         struct MemBlock *new_block = block_init(end_ptr, size, NULL);
-        if (new_block) {
+        if (new_block) 
+        {
             current->next = new_block;
             result = new_block->ptr;
         }

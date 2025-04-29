@@ -2,7 +2,6 @@
 #ifndef MEMORY_MANAGER_H
 #define MEMORY_MANAGER_H
 
-#include <stddef.h> // For size_t
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
