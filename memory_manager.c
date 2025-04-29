@@ -105,12 +105,12 @@ void* mem_alloc(size_t size)
     pthread_mutex_lock(&mem_lock);
 
     // Check if size of MemBlock is greater than 0
-    if (size <= 0)
-    {
-        fprintf(stderr, "mem_alloc error: Too small, block size is %zu\n", size);
-        pthread_mutex_unlock(&mem_lock);
-        return NULL;
-    }
+    // if (size <= 0)
+    // {
+    //     fprintf(stderr, "mem_alloc error: Too small, block size is %zu\n", size);
+    //     pthread_mutex_unlock(&mem_lock);
+    //     return NULL;
+    // }
 
     // Check if enough space in the Memory pool
     if (size > MemPool.size) 
