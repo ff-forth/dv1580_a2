@@ -1,11 +1,4 @@
 #include "linked_list.h"
-#include <stdio.h>  
-#include <stdlib.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include "memory_manager.h"
-#include <string.h>
-#include <pthread.h>
 
 // Global mutex for list operations
 pthread_mutex_t list_mutex = PTHREAD_MUTEX_INITIALIZER;
