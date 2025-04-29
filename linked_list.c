@@ -19,21 +19,28 @@ void list_init(Node** head, size_t size)
 
 void list_insert(Node** head, uint16_t data)
 {
+    // Create a new node
     Node* new_node = mem_alloc(sizeof(Node));
     if (!new_node) {
         fprintf(stderr, "list_insert failed: Memory allocation failed\n");
         return;
     }
 
-    pthread_mutex_init(&new_node->lock, NULL);
+    // Initialize the new node
     new_node->data = data;
     new_node->next = NULL;
+    pthread_mutex_init(&new_node->lock, NULL);
 
+    // Lock the list
     pthread_mutex_lock(&list_mutex);
     
-    if (*head == NULL) {
+    // Check if list is empty
+    if (*head == NULL) 
+    {
         *head = new_node;
-    } else {
+    } 
+    else
+    {
         Node* current = *head;
         pthread_mutex_lock(&current->lock);
         
