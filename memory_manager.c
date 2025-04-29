@@ -191,7 +191,7 @@ void mem_free(void* block)
     // Check if block ptr is null
     if (!block) 
     {
-        // fprintf(stderr, "mem_free failed, block ptr is null.\n");
+        fprintf(stderr, "mem_free failed, block ptr is null.\n");
         pthread_mutex_unlock(&mem_lock);
         return;
     }
@@ -199,7 +199,7 @@ void mem_free(void* block)
     // Check if MemPool is empty
     if (!MemPool.next) 
     {
-        // fprintf(stderr, "mem_free failed, MemPool is empty.\n");
+        fprintf(stderr, "mem_free failed, MemPool is empty.\n");
         pthread_mutex_unlock(&mem_lock);
         return;
     }
